@@ -1,7 +1,6 @@
 require "pry"
 
 module PolicyOcr
-  ENTRY_COLUMNS = 27
   DIGIT_COLUMNS = 3
   ENTRY_DIGITS = 9
   ENTRY_ROWS = 4
@@ -47,6 +46,14 @@ module PolicyOcr
     entry_groups.map { |group| parse_number(group) }
   end
 
+  def checksum
+    parse_ocr.map { |num_str| num_str.to_i.digits.sum }
+  end
+
+  def valid?
+    checksum.map { |num| (num % 11).zero? }
+  end
+
   private
 
   def entry_groups
@@ -69,6 +76,8 @@ module PolicyOcr
   end
 
   def cell(rows, digit_index)
-    rows.map { |chunks| chunks.fetch(digit_index, " " * DIGIT_COLUMNS).ljust(DIGIT_COLUMNS) }.join
+    rows.map do |digit|
+      digit.fetch(digit_index) { " " * DIGIT_COLUMNS }
+    end.join
   end
 end

@@ -15,7 +15,7 @@ describe PolicyOcr do
 
   describe "#parse_ocr" do
     context "with a single entry" do
-      let(:ocr) {[
+      let!(:ocr) {[
         "    _  _     _  _  _  _  _  ",
         "  | _| _||_||_ |_   ||_||_| ",
         "  ||_  _|  | _||_|  ||_| _| ",
@@ -29,14 +29,38 @@ describe PolicyOcr do
     end
 
     context "with multiple entries" do
-      let(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
-      let(:ocr) {File.read(file_path)}
+      let!(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
+      let!(:ocr) {File.read(file_path)}
 
       it "parses multiple literal examples in sample.txt" do
-        parser = worker_class.new(ocr)
+        subject = worker_class.new(ocr)
 
-        expect(parser.parse_ocr).to eq(%w[000000000 111111111 222222222 333333333 444444444 555555555 666666666 777777777 888888888 999999999 123456789])
+        expect(subject.parse_ocr).to eq(%w[000000000 111111111 222222222 333333333 444444444 555555555 666666666 777777777 888888888 999999999 123456789])
       end
+    end
+  end
+
+  describe "#checksum" do
+    let!(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
+    let!(:ocr) {File.read(file_path)}
+
+    context "computes the correct checksum for a range of numbers" do
+      it "with multiple entries" do
+        subject = worker_class.new(ocr)
+
+        expect(subject.checksum).to eq([0, 9, 18, 27, 36, 45, 54, 63, 72, 81, 45])
+      end
+    end
+  end
+
+  describe "#valid?" do
+    let!(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
+    let!(:ocr) {File.read(file_path)}
+
+    it "is true when the checksum is evenly divisible by 11" do
+      subject = worker_class.new(ocr)
+
+      expect(subject.valid?).to eq([true, false, false, false, false, false, false, false, false, false, false])
     end
   end
 end
