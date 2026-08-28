@@ -48,7 +48,7 @@ describe PolicyOcr do
       it "with multiple entries" do
         subject = worker_class.new(ocr)
 
-        expect(subject.checksum).to eq([0, 9, 18, 27, 36, 45, 54, 63, 72, 81, 45])
+        expect(subject.checksum).to eq([0, 45, 90, 135, 180, 225, 270, 315, 360, 405, 165])
       end
     end
   end
@@ -60,7 +60,97 @@ describe PolicyOcr do
     it "is true when the checksum is evenly divisible by 11" do
       subject = worker_class.new(ocr)
 
-      expect(subject.valid?).to eq([true, false, false, false, false, false, false, false, false, false, false])
+      expect(subject.valid?).to eq([true, false, false, false, false, false, false, false, false, false, true])
+    end
+  end
+
+  describe "#report" do
+    it "matches the exact example from the spec" do
+      content = [
+        "    _  _  _  _  _  _  _  _ ",
+        "|_||_   ||_ | ||_|| || || |",
+        "  | _|  | _||_||_||_||_||_|",
+        "                           ",
+        " _  _        _ XXXXXX _  _ ",
+        "|_||_   |  || |XXXXXX _||_ ",
+        "|_||_|  |  ||_|XXXXXX _||_|",
+        "                           ",
+        " _  _     _  _        _  _ ",
+        "|_ |_ |_| _|  |  ||_||_||_ ",
+        "|_||_|  | _|  |  |  | _| _|",
+        "                           "
+      ].join("\n")
+
+      subject = worker_class.new(content)
+
+      expect(subject.report).to eq(["457508000", "86110??36 ILL", "664371495 ERR"])
+    end
+
+    it "marks a checksum failure as ERR" do
+      content = [
+        " _  _     _  _        _  _ ",
+        "|_ |_ |_| _|  |  ||_||_||_ ",
+        "|_||_|  | _|  |  |  | _| _|",
+        "                           "
+      ].join("\n")
+
+      subject = worker_class.new(content)
+
+      expect(subject.report).to eq(["664371495 ERR"])
+    end
+
+    it "marks an illegible number as ILL, taking priority over ERR" do
+      content = [
+        " _  _        _ XXXXXX _  _ ",
+        "|_||_   |  || |XXXXXX _||_ ",
+        "|_||_|  |  ||_|XXXXXX _||_|",
+        "                           "
+      ].join("\n")
+
+      subject = worker_class.new(content)
+
+      expect(subject.report).to eq(["86110??36 ILL"])
+    end
+
+    it "leaves a valid number bare, with no status" do
+      content = [
+        "    _  _  _  _  _  _  _  _ ",
+        "|_||_   ||_ | ||_|| || || |",
+        "  | _|  | _||_||_||_||_||_|",
+        "                           "
+      ].join("\n")
+
+      subject = worker_class.new(content)
+
+      expect(subject.report).to eq(["457508000"])
+    end
+  end
+
+  describe "#write_report" do
+    it "writes the report to disk, one entry per line, ending in a trailing newline" do
+      content = [
+        "    _  _  _  _  _  _  _  _ ",
+        "|_||_   ||_ | ||_|| || || |",
+        "  | _|  | _||_||_||_||_||_|",
+        "                           ",
+        " _  _        _ XXXXXX _  _ ",
+        "|_||_   |  || |XXXXXX _||_ ",
+        "|_||_|  |  ||_|XXXXXX _||_|",
+        "                           ",
+        " _  _     _  _        _  _ ",
+        "|_ |_ |_| _|  |  ||_||_||_ ",
+        "|_||_|  | _|  |  |  | _| _|",
+        "                           "
+      ].join("\n")
+
+      parser = worker_class.new(content)
+
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "report.txt")
+        parser.write_report(path)
+
+        expect(File.read(path)).to eq("457508000\n86110??36 ILL\n664371495 ERR\n")
+      end
     end
   end
 end

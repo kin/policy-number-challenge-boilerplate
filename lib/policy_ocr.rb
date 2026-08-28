@@ -4,6 +4,7 @@ module PolicyOcr
   DIGIT_COLUMNS = 3
   ENTRY_DIGITS = 9
   ENTRY_ROWS = 4
+  UNKNOWN_DIGIT = "?"
 
   DIGITS = {
     (" _ " +
@@ -47,11 +48,29 @@ module PolicyOcr
   end
 
   def checksum
-    parse_ocr.map { |num_str| num_str.to_i.digits.sum }
+    parse_ocr.map do |num_str|
+      num_str.chars.reverse.each_with_index.sum { |digit, index| digit.to_i * (index + 1) }
+    end
   end
 
   def valid?
     checksum.map { |num| (num % 11).zero? }
+  end
+
+  def report
+    parse_ocr.zip(valid?).map do |number, is_valid|
+      if number.include?(UNKNOWN_DIGIT)
+        "#{number} ILL"
+      elsif !is_valid
+        "#{number} ERR"
+      else
+        number
+      end
+    end
+  end
+
+  def write_report(path)
+    File.write(path, report.join("\n") + "\n")
   end
 
   private
@@ -65,7 +84,7 @@ module PolicyOcr
     rows = digit_rows(entry_lines)
 
     (0...ENTRY_DIGITS).map do |digit_index|
-      DIGITS[cell(rows, digit_index)]
+      DIGITS[cell(rows, digit_index)] || UNKNOWN_DIGIT
     end.join
   end
 
