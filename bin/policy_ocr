@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/policy_ocr"
+
+extend PolicyOcr
+
+file_path = ARGV[0] || File.join(__dir__, "..", "spec", "fixtures", "sample.txt")
+raw = File.read(file_path)
+
+puts break_file_into_segments(filter_string(raw))

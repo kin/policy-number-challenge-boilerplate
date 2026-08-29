@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app
+    command: bin/policy_ocr
+
+  test:
+    build: .
+    volumes:
+      - .:/app
+    command: rspec
