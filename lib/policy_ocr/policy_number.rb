@@ -3,7 +3,6 @@
 module PolicyOcr
   class PolicyNumber
     LENGTH = 9
-    MODULUS = 11
 
     attr_reader :digits
 
@@ -15,13 +14,12 @@ module PolicyOcr
       !digits.include?(Digits::UNKNOWN)
     end
 
-    # (d1 + 2*d2 + ... + 9*d9) where d1 is the rightmost digit.
     def checksum
       digits.chars.reverse.each_with_index.sum { |digit, i| digit.to_i * (i + 1) }
     end
 
     def valid?
-      legible? && (checksum % MODULUS).zero?
+      legible? && (checksum % 11).zero?
     end
 
     def status

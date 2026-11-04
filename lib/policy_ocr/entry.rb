@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 module PolicyOcr
-  # One scanned entry: three glyph rows (the 4th, blank row is dropped).
-  # Responsible for slicing rows into glyphs and turning them into a PolicyNumber.
   class Entry
     def initialize(lines)
       @rows = Array.new(Digits::HEIGHT) { |i| lines[i].to_s }
@@ -30,4 +28,3 @@ module PolicyOcr
     end
   end
 end
-

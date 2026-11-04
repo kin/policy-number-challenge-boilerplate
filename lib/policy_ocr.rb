@@ -5,7 +5,6 @@ require_relative "policy_ocr/document"
 require_relative "policy_ocr/report"
 
 module PolicyOcr
-  # Convenience entry points so callers don't need to know the object graph.
   def self.parse(text)
     Document.new(text).policy_numbers
   end

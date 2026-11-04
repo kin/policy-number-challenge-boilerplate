@@ -1,155 +1,176 @@
-require_relative '../lib/policy_ocr'
-require 'pry'
+# frozen_string_literal: true
+
 require "spec_helper"
+require "tmpdir"
+require_relative "../lib/policy_ocr"
 
-describe PolicyOcr do
-  let(:worker_class) { Class.new { include PolicyOcr } }
+RSpec.describe PolicyOcr do
+  let(:sample) { fixture("sample") }
 
-  it "loads" do
-    expect(PolicyOcr).to be_a Module
+  let(:valid_entry) do
+    [
+      "    _  _  _  _  _  _  _  _ ",
+      "|_||_   ||_ | ||_|| || || |",
+      "  | _|  | _||_||_||_||_||_|",
+      "                           "
+    ]
   end
 
-  it 'loads the sample.txt' do
-    expect(fixture('sample').lines.count).to eq(44)
+  let(:illegible_entry) do
+    [
+      " _  _        _ XXXXXX _  _ ",
+      "|_||_   |  || |XXXXXX _||_ ",
+      "|_||_|  |  ||_|XXXXXX _||_|",
+      "                           "
+    ]
   end
 
-  describe "#parse_ocr" do
-    context "with a single entry" do
-      let!(:ocr) {[
+  let(:error_entry) do
+    [
+      " _  _     _  _        _  _ ",
+      "|_ |_ |_| _|  |  ||_||_||_ ",
+      "|_||_|  | _|  |  |  | _| _|",
+      "                           "
+    ]
+  end
+
+  let(:mixed) { (valid_entry + illegible_entry + error_entry).join("\n") }
+
+  it "loads the sample fixture" do
+    expect(sample.lines.count).to eq(44)
+  end
+
+  describe ".parse" do
+    it "parses a single entry" do
+      ocr = [
         "    _  _     _  _  _  _  _  ",
         "  | _| _||_||_ |_   ||_||_| ",
         "  ||_  _|  | _||_|  ||_| _| ",
         "                            "
-      ].join("\n")}
-      it "parses single ocr literal example ('123456789')" do
-        subject = worker_class.new(ocr).parse_ocr
+      ].join("\n")
 
-        expect(subject).to eq(["123456789"])
-      end
+      expect(described_class.parse(ocr).map(&:to_s)).to eq(["123456789"])
     end
 
-    context "with multiple entries" do
-      let!(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
-      let!(:ocr) {File.read(file_path)}
+    it "parses every entry in sample.txt" do
+      expect(described_class.parse(sample).map(&:to_s)).to eq(
+                                                             %w[000000000 111111111 222222222 333333333 444444444
+           555555555 666666666 777777777 888888888 999999999 123456789]
+                                                           )
+    end
 
-      it "parses multiple literal examples in sample.txt" do
-        subject = worker_class.new(ocr)
-
-        expect(subject.parse_ocr).to eq(%w[000000000 111111111 222222222 333333333 444444444 555555555 666666666 777777777 888888888 999999999 123456789])
-      end
+    it "returns PolicyNumber objects" do
+      expect(described_class.parse(sample)).to all(be_a(PolicyOcr::PolicyNumber))
     end
   end
 
-  describe "#checksum" do
-    let!(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
-    let!(:ocr) {File.read(file_path)}
-
-    context "computes the correct checksum for a range of numbers" do
-      it "with multiple entries" do
-        subject = worker_class.new(ocr)
-
-        expect(subject.checksum).to eq([0, 45, 90, 135, 180, 225, 270, 315, 360, 405, 165])
-      end
-    end
-  end
-
-  describe "#valid?" do
-    let!(:file_path) {File.expand_path("fixtures/sample.txt", __dir__)}
-    let!(:ocr) {File.read(file_path)}
-
-    it "is true when the checksum is evenly divisible by 11" do
-      subject = worker_class.new(ocr)
-
-      expect(subject.valid?).to eq([true, false, false, false, false, false, false, false, false, false, true])
-    end
-  end
-
-  describe "#report" do
+  describe ".report" do
     it "matches the exact example from the spec" do
-      content = [
-        "    _  _  _  _  _  _  _  _ ",
-        "|_||_   ||_ | ||_|| || || |",
-        "  | _|  | _||_||_||_||_||_|",
-        "                           ",
-        " _  _        _ XXXXXX _  _ ",
-        "|_||_   |  || |XXXXXX _||_ ",
-        "|_||_|  |  ||_|XXXXXX _||_|",
-        "                           ",
-        " _  _     _  _        _  _ ",
-        "|_ |_ |_| _|  |  ||_||_||_ ",
-        "|_||_|  | _|  |  |  | _| _|",
-        "                           "
-      ].join("\n")
+      expect(described_class.report(mixed).lines)
+        .to eq(["457508000", "86110??36 ILL", "664371495 ERR"])
+    end
+  end
 
-      subject = worker_class.new(content)
+  describe PolicyOcr::Digits do
+    describe ".recognize" do
+      it "reads each known glyph as its digit" do
+        described_class::TABLE.each do |glyph, digit|
+          expect(described_class.recognize(glyph)).to eq(digit)
+        end
+      end
 
-      expect(subject.report).to eq(["457508000", "86110??36 ILL", "664371495 ERR"])
+      it "returns ? for an unknown glyph" do
+        expect(described_class.recognize("XXXXXXXXX")).to eq("?")
+      end
+    end
+  end
+
+  describe PolicyOcr::Document do
+    subject(:document) { described_class.new(sample) }
+
+    it "splits the sample into eleven entries" do
+      expect(document.entries.size).to eq(11)
     end
 
-    it "marks a checksum failure as ERR" do
-      content = [
-        " _  _     _  _        _  _ ",
-        "|_ |_ |_| _|  |  ||_||_||_ ",
-        "|_||_|  | _|  |  |  | _| _|",
-        "                           "
-      ].join("\n")
+    it "skips groups that are entirely blank" do
+      document = described_class.new(("\n" * 4) + valid_entry.join("\n"))
 
-      subject = worker_class.new(content)
-
-      expect(subject.report).to eq(["664371495 ERR"])
+      expect(document.policy_numbers.map(&:to_s)).to eq(["457508000"])
     end
 
-    it "marks an illegible number as ILL, taking priority over ERR" do
-      content = [
-        " _  _        _ XXXXXX _  _ ",
-        "|_||_   |  || |XXXXXX _||_ ",
-        "|_||_|  |  ||_|XXXXXX _||_|",
-        "                           "
-      ].join("\n")
+    it "builds from a file" do
+      path = File.expand_path("fixtures/sample.txt", __dir__)
+      document = described_class.from_file(path)
 
-      subject = worker_class.new(content)
+      expect(document.policy_numbers.size).to eq(11)
+    end
+  end
 
-      expect(subject.report).to eq(["86110??36 ILL"])
+  describe PolicyOcr::PolicyNumber do
+    let(:numbers) { PolicyOcr.parse(sample) }
+
+    describe "#checksum" do
+      it "computes the checksum for each entry in sample.txt" do
+        expect(numbers.map(&:checksum))
+          .to eq([0, 45, 90, 135, 180, 225, 270, 315, 360, 405, 165])
+      end
+    end
+
+    describe "#valid?" do
+      it "is true only when the checksum is evenly divisible by 11" do
+        expect(numbers.map(&:valid?))
+          .to eq([true, false, false, false, false, false, false, false, false, false, true])
+      end
+
+      it "is false for an illegible number" do
+        expect(described_class.new("86110??36")).not_to be_valid
+      end
+    end
+
+    describe "#status" do
+      it "is :ok for a valid number" do
+        expect(described_class.new("457508000").status).to eq(:ok)
+      end
+
+      it "is :error for a checksum failure" do
+        expect(described_class.new("664371495").status).to eq(:error)
+      end
+
+      it "is :illegible when a digit could not be read" do
+        expect(described_class.new("86110??36").status).to eq(:illegible)
+      end
+    end
+
+    it "compares by value" do
+      expect(described_class.new("123456789")).to eq(described_class.new("123456789"))
+    end
+  end
+
+  describe PolicyOcr::Report do
+    def report_for(lines)
+      described_class.new(PolicyOcr.parse(lines.join("\n")))
     end
 
     it "leaves a valid number bare, with no status" do
-      content = [
-        "    _  _  _  _  _  _  _  _ ",
-        "|_||_   ||_ | ||_|| || || |",
-        "  | _|  | _||_||_||_||_||_|",
-        "                           "
-      ].join("\n")
-
-      subject = worker_class.new(content)
-
-      expect(subject.report).to eq(["457508000"])
+      expect(report_for(valid_entry).lines).to eq(["457508000"])
     end
-  end
 
-  describe "#write_report" do
-    it "writes the report to disk, one entry per line, ending in a trailing newline" do
-      content = [
-        "    _  _  _  _  _  _  _  _ ",
-        "|_||_   ||_ | ||_|| || || |",
-        "  | _|  | _||_||_||_||_||_|",
-        "                           ",
-        " _  _        _ XXXXXX _  _ ",
-        "|_||_   |  || |XXXXXX _||_ ",
-        "|_||_|  |  ||_|XXXXXX _||_|",
-        "                           ",
-        " _  _     _  _        _  _ ",
-        "|_ |_ |_| _|  |  ||_||_||_ ",
-        "|_||_|  | _|  |  |  | _| _|",
-        "                           "
-      ].join("\n")
+    it "marks a checksum failure as ERR" do
+      expect(report_for(error_entry).lines).to eq(["664371495 ERR"])
+    end
 
-      parser = worker_class.new(content)
+    it "marks an illegible number as ILL, taking priority over ERR" do
+      expect(report_for(illegible_entry).lines).to eq(["86110??36 ILL"])
+    end
 
-      Dir.mktmpdir do |dir|
-        path = File.join(dir, "report.txt")
-        parser.write_report(path)
+    describe "#write" do
+      it "writes one entry per line, ending in a trailing newline" do
+        Dir.mktmpdir do |dir|
+          path = File.join(dir, "report.txt")
+          PolicyOcr.report(mixed).write(path)
 
-        expect(File.read(path)).to eq("457508000\n86110??36 ILL\n664371495 ERR\n")
+          expect(File.read(path)).to eq("457508000\n86110??36 ILL\n664371495 ERR\n")
+        end
       end
     end
   end
